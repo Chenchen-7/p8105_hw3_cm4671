@@ -1,0 +1,347 @@
+---
+title: "p8105_hw3_cm4671"
+output: github_document
+date: "2025-10-09"
+---
+
+# Problem 1
+```{r}
+library(tidyverse)
+library(ggridges)
+library(p8105.datasets)
+data("instacart")
+instacart %>% glimpse()
+```
+
+```{r}
+nrow(instacart)
+ncol(instacart)
+```
+
+The number of row is 1384617 which means there are 1384617 observations. The number of column is 15 which means there are 15 variables. From the `glimpse()` we got a structure of the data for describing individual grocery items from customer orders placed through the Instacart online grocery service. 
+Order_id: The unique identifier for each order. Many rows share the same order_id because multiple items can belong to the same order. 
+User_id: Identifies the customer who placed the order.
+Eval_set, product_name, product_name, aisle, department are all categorical variables.
+Eval_set: indicates which data subset the record belongs to (e.g., “train,” “test”). The Order_hour_of_day is the hours of the day when the order is placed (0-23).
+Product_id and product_name — the numeric ID and name of the specific product purchased.
+Reordered: binomial variable, 1 for the item is reordered, 0 for the item is not reordered.
+
+```{r}
+# How many aisles are there, and which aisles are the most items ordered from?
+aisle_summary =
+  instacart |>
+  count(aisle, sort = TRUE)
+
+aisle_summary |> 
+  summarize(num_aisles = n_distinct(aisle))
+
+aisle_summary |> head(5)
+```
+From the data above we can see there are 134 aisles in total. And the first five aisles are fresh vegetables, fresh fruits, packaged vegetables fruits, yogurt, packaged cheese.
+
+```{r}
+# Make a plot that shows the number of items ordered in each aisle, limiting this to aisles with more than 10000 items ordered. Arrange aisles sensibly, and organize your plot so others can read it.
+aisle_summary |>
+  filter(n > 10000) |>
+  mutate(aisle = fct_reorder(aisle, n)) |>
+  ggplot(aes(x = aisle, y = n)) +
+  geom_col(fill = "blue") +
+  coord_flip() +
+  labs(
+    title = "Number of items ordered per aisle (aisles > 10 000 orders)",
+    x = "Aisle",
+    y = "Number of items ordered"
+  ) +
+  theme_minimal(base_size = 12)
+
+```
+
+```{r}
+# Make a table showing the three most popular items in each of the aisles “baking ingredients”, “dog food care”, and “packaged vegetables fruits”. Include the number of times each item is ordered in your table.
+popular_items =
+  instacart |>
+  filter(aisle %in% c("baking ingredients", "dog food care", "packaged vegetables fruits")) |>
+  group_by(aisle, product_name) |>
+  summarize(order_count = n(), .groups = "drop_last") |>
+  slice_max(order_count, n = 3)
+popular_items
+```
+
+```{r}
+# Make a table showing the mean hour of the day at which Pink Lady Apples and Coffee Ice Cream are ordered on each day of the week; format this table for human readers (i.e. produce a 2 x 7 table).
+mean_hour =
+  instacart |>
+  filter(product_name %in% c("Pink Lady Apples", "Coffee Ice Cream")) |>
+  group_by(product_name, order_dow) |>
+  summarize(mean_hour = mean(order_hour_of_day)) |>
+  pivot_wider(names_from = order_dow, values_from = mean_hour)
+
+knitr::kable(mean_hour, digits = 2,
+             col.names = c("Product", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"))
+
+```
+
+# Problem 2
+```{r}
+# How many ZIP codes are observed 116 times?  How many are observed fewer than 10 times?
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(janitor)
+Zip_Codes <- read.csv(
+  "Data/Zip Codes.csv",
+  na = c("NA", ".", "")
+) |>
+  clean_names() |>
+  mutate(zip_code = as.character(zip_code))
+
+Zori <- read.csv(
+  "Data/Zip_zori_uc_sfrcondomfr_sm_month_NYC.csv",
+  na = c("NA", ".", "")
+) |>
+  clean_names()
+```
+
+```{r}
+zori_long <- Zori |>
+  pivot_longer(
+    cols = starts_with("x"),
+    names_to = "date",
+    values_to = "zori"
+  ) |>
+  mutate(
+    date = as.Date(sub("x", "", date), format = "%Y_%m_%d"),
+    region_name = as.character(region_name)
+  )
+```
+
+```{r}
+# Let data in the row move to column
+zillow_df <- zori_long |>
+  left_join(Zip_Codes, by = c("region_name" = "zip_code"))
+zillow_df <- zillow_df |>
+  rename(
+    zip = region_name,
+    rental_price = zori
+  )
+```
+
+```{r}
+# Checking new data
+glimpse(zillow_df)
+```
+
+```{r}
+# How many ZIP codes are observed 116 times? How many are observed fewer than 10 times? 
+# Count the number of non-missing months per ZIP
+zip_counts <- zillow_df |>
+  group_by(zip) |>
+  summarise(n_obs = sum(!is.na(rental_price)))
+
+# Number of ZIPs with full 116 months
+n_zip_116 <- sum(zip_counts$n_obs == 116)
+
+# Number of ZIPs with fewer than 10 months
+n_zip_lt10 <- sum(zip_counts$n_obs < 10)
+
+n_zip_116
+n_zip_lt10
+```
+From the data above, we see that the number of zips with full 116 month are 47. The number of zips with fewer than 10 months are 26. For zip cases with less than 10 observations, there are several reasons. It might be that the region joined Zillow relatively late, resulting in incomplete data. It could also be that the data is too sparse due to the cessation or rental. These differences arise because Zillow's coverage of rental listings varies by location and time.
+
+```{r}
+# Create a reader-friendly table showing the average rental price in each borough and year (not month). Comment on trends in this table.
+library(knitr)
+
+borough_year_avg <- zillow_df |>
+  mutate(year = lubridate::year(date)) |>
+  group_by(county, year) |>
+  summarise(mean_rent = mean(rental_price, na.rm = TRUE)) |>
+  arrange(county, year)
+
+kable(borough_year_avg,
+      digits = 0,
+      col.names = c("Borough", "Year", "Average Rent ($)"))
+```
+From the data in the table, we can see that housing prices in each region are on the rise. House prices in the Bronx experienced a decline between 2015 and 2016. After 2016, they have been on an upward trend, and the increase has been more significant in 2020,2022, 2023, and 2024. The property prices in Kings saw a slight drop in 2020, but they continued to rise afterwards, with the largest increase in 2022. Similar to Kings, the New York area experienced a slight decline in 2022 and then saw an increase in its growth rate afterwards. The Queens area experienced a slight decline in 2021 and then grew significantly. The Richmond area lacks data from 2015 to 2019 and has been on an upward trend from 2020 to 2024. Among several regions, New York has the highest average rent.
+
+```{r}
+# Make a plot showing NYC Rental Prices within ZIP codes for all available years. Your plot should facilitate comparisons across boroughs. Comment on any significant elements of this plot.
+library(ggplot2)
+ggplot(zillow_df,
+       aes(x = date, y = rental_price,
+           group = zip, color = county)) +
+  geom_line(alpha = 0.5) +
+  theme_minimal(base_size = 12) +
+  labs(title = "NYC Rental Price Trends by ZIP Code (2015–2024)",
+       x = "Year",
+       y = "Average Rent ($)",
+       color = "Borough")
+```
+From the picture, we can see that the housing prices in Richmond and the Bronx are lower than those in other areas, while the housing prices in the New York area are the highest. And house prices in all regions are on the rise.
+
+```{r}
+# Compute the average rental price within each ZIP code over each month in 2023. Make a reader-friendly plot showing the distribution of ZIP-code-level rental prices across boroughs; put differently, your plot should facilitate the comparison of the distribution of average rental prices across boroughs. Comment on this plot
+rent_2023 <- zillow_df |>
+  filter(lubridate::year(date) == 2023) |>
+  group_by(zip, county) |>
+  summarise(avg_rent_2023 = mean(rental_price, na.rm = TRUE))
+
+ggplot(rent_2023,
+       aes(x = county, y = avg_rent_2023, fill = county)) +
+  geom_boxplot(alpha = 0.8) +
+  theme_minimal(base_size = 12) +
+  labs(title = "Distribution of ZIP-level Average Rents by Borough (2023)",
+       x = "Borough",
+       y = "Average Monthly Rent ($)") +
+  theme(legend.position = "none")
+
+```
+Since we'd like to compare the distribution of average rental prices, therefore, boxplot is a good to show the comparing average.From the table above, we can clearly see the difference between average rent. The average rental level in the New York area is much higher than that in other areas. The average rents in the Bronx and Richmond are relatively low and similar, but the variance in the Bronx area is greater.
+
+```{r}
+#Combine the two previous plots into a single graphic, and export this to a results folder in your repository.
+library(patchwork)
+
+trend_plot <-
+  ggplot(zillow_df,
+         aes(x = date, y = rental_price,
+             group = zip, color = county)) +
+  geom_line(alpha = 0.3) +
+  theme_minimal(base_size = 12) +
+  labs(title = "Rental Price Trends by ZIP Code (2015–2024)",
+       x = "Year", y = "Average Rent ($)", color = "Borough")
+
+dist_plot <-
+  ggplot(rent_2023,
+         aes(x = county, y = avg_rent_2023, fill = county)) +
+  geom_boxplot(alpha = 0.8) +
+  theme_minimal(base_size = 12) +
+  labs(title = "Distribution of Average Rents by Borough (2023)",
+       x = "Borough", y = "Average Monthly Rent ($)") +
+  theme(legend.position = "none")
+
+combined_plot <- trend_plot / dist_plot
+
+# Export the combined figure
+ggsave("Results/zillow_combined_plot.png",
+       combined_plot, width = 10, height = 8)
+```
+
+
+# Problem 3
+```{r}
+# Load datasets
+covar <- read_csv("Data/nhanes_covar.csv", 
+                  skip = 4,
+                  na = c("NA", ".", "")) |>
+  clean_names()
+accel <- read_csv("Data/nhanes_accel.csv",
+                  na = c("NA", ".", "")) |>
+  clean_names()
+
+covar
+accel
+```
+
+```{r}
+# Cleaning and merging the data
+covar_clean <- covar |>
+  filter(age >= 21) |>
+  drop_na()
+
+covar_clean <- covar_clean |>
+  mutate(
+    sex = factor(sex, levels = c(1, 2), labels = c("Male", "Female")),
+    education = factor(
+      education,
+      levels = c(1, 2, 3),
+      labels = c("Less than high school", "High school", "More than high school"),
+      ordered = TRUE
+    )
+  )
+accel_tidy <- accel |>
+  pivot_longer(
+    cols = starts_with("min"),
+    names_to = "minute",
+    names_prefix = "min",
+    values_to = "MIMS"
+  ) |>
+  mutate(minute = as.integer(minute))
+
+merged_data <- left_join(covar_clean, accel_tidy, by = "seqn")
+merged_data
+```
+
+```{r}
+# Produce a reader-friendly table for the number of men and women in each education category, and create a visualization of the age distributions for men and women in each education category. Comment on these items.
+sex_edu_table <- merged_data |>
+  distinct(seqn, sex, education) |>
+  count(sex, education) |>
+  pivot_wider(names_from = sex, values_from = n, values_fill = 0)
+
+kable(sex_edu_table, caption = "Number of Men and Women by Education Level")
+
+ggplot(merged_data |> distinct(seqn, age, sex, education),
+       aes(x = age, fill = sex)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~ education, ncol = 1) +
+  scale_fill_manual(values = c("blue4", "red4")) +
+  labs(
+    title = "Age Distributions by Education and Sex",
+    x = "Age",
+    y = "Density",
+    fill = "Sex"
+  ) +
+  theme_minimal()
+```
+From the data in the table, we can see that in the two categories of "Less than high school" and "More than high school", the number of men and women is very similar, with only a difference of 1 or 3. However, at the "High School" level, the number of men is significantly greater than that of women. 
+
+```{r}
+total_activity <- merged_data |>
+  group_by(seqn, sex, age, education) |>
+  summarise(total_MIMS = sum(MIMS, na.rm = TRUE), .groups = "drop")
+
+ggplot(total_activity, aes(x = age, y = total_MIMS, color = sex)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~ education, scales = "free_y") +
+  labs(
+    title = "Total Daily Activity vs. Age by Education Level and Sex",
+    x = "Age (years)",
+    y = "Total MIMS (summed over 24 hours)",
+    color = "Sex"
+  ) +
+  theme_minimal()
+```
+In the “Less than high school” group, total daily activity (measured as summed MIMS) was highest among younger participants, with women initially showing higher activity than men.  As age increased, activity declined for both sexes.  Around age 40, men’s activity surpassed women’s and showed a bell-shaped trend—rising and then falling.  Women’s activity rose slightly again around age 52 but eventually decreased for both sexes.
+
+In the “High school” group, men and women had similar activity levels at younger ages, both following a bell-shaped pattern.  However, the increase and decrease in men’s activity were smaller than those in women’s.  Both sexes began to decline around age 40;  by age 60, men’s activity stabilized, while women’s remained bell-shaped, with a modest rise and subsequent fall.
+
+In the “More than high school” group, women consistently showed higher activity than men.  Both sexes had relatively stable activity levels across most ages.  Around age 40, men showed a mild bell-shaped pattern followed by a steady decline, whereas women’s activity rose around age 50, peaked at about age 60, and then began to fall.
+
+When we compared the three groups, the population of "Less than high school" had the largest range and was almost constantly decreasing. The number of people at High school has both increased and decreased significantly. The trend of the "More than high school" group is more stable. In terms of gender, among the "Less than high school" population, women spending 40 money spend more time than men and then less time. In the other two groups, the number of females was greater than that of males.
+
+```{r}
+# A three-panel plot that shows the 24-hour activity time courses for each education level and use color to indicate sex
+avg_activity_timecourse <- merged_data |>
+  group_by(education, sex, minute) |>
+  summarise(mean_MIMS = mean(MIMS, na.rm = TRUE), .groups = "drop")
+
+ggplot(avg_activity_timecourse, aes(x = minute, y = mean_MIMS, color = sex)) +
+  geom_line(size = 1) +
+  geom_smooth(se = FALSE, linetype = "dashed") +
+  facet_wrap(~ education, ncol = 1, scales = "free_y") +
+  labs(
+    title = "Average 24-hour Activity Patterns by Education and Sex",
+    x = "Minute of Day (0–1440)",
+    y = "Average MIMS",
+    color = "Sex"
+  ) +
+  theme_minimal()
+```
+From the graph, we can clearly see that at the "below high school" level, the average participation of men in activities was initially slightly higher than that of women, and then the two tended to be the same. During the "high school" stage, the two start out similar, and then as time (age) increases, the average values increase simultaneously, but the average participation of females in activities is slightly higher than that of males. At the "high school and above" level, men and women start almost the same. Over time and with the increase in the average level, women are significantly higher than men. Overall, the time spent participating in activities slightly decreased from the beginning and dropped to the lowest level as one grew older. Then, around 300, it began to show an upward trend with a very large amplitude, and then tended to level off.
+
+
+
+
